@@ -13,7 +13,19 @@ export default function ScrapeButton() {
       const res = await fetch('/api/scrape/manual', {
         method: 'POST',
       })
-      const data = await res.json()
+      const text = await res.text()
+      let data: { saved?: number; checked?: number; error?: string }
+      try {
+        data = text ? JSON.parse(text) : {}
+      } catch {
+        data = { error: text || `Request failed with status ${res.status}` }
+      }
+
+      if (!res.ok) {
+        setResult({ error: data.error || `Request failed with status ${res.status}` })
+        return
+      }
+
       setResult(data)
     } catch {
       setResult({ error: 'Request failed' })

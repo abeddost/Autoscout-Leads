@@ -240,8 +240,9 @@ export async function scrapeAutoScout24(): Promise<ScrapeResult> {
       // Vercel / Lambda environment — use @sparticuz/chromium-min (no bundled binary)
       // Binary is downloaded at runtime from GitHub Releases
       const chromium = await import('@sparticuz/chromium-min').then((m) => m.default || m)
+      const packArch = process.arch === 'arm64' ? 'arm64' : 'x64'
       executablePath = await chromium.executablePath(
-        'https://github.com/Sparticuz/chromium/releases/download/v149.0.0/chromium-v149.0.0-pack.tar'
+        `https://github.com/Sparticuz/chromium/releases/download/v149.0.0/chromium-v149.0.0-pack.${packArch}.tar`
       )
       launchArgs = chromium.args as string[]
     }
