@@ -237,9 +237,12 @@ export async function scrapeAutoScout24(): Promise<ScrapeResult> {
     let launchArgs: string[] = []
 
     if (process.env.AWS_LAMBDA_FUNCTION_VERSION || process.env.VERCEL) {
-      // Vercel / Lambda environment — use @sparticuz/chromium
-      const chromium = await import('@sparticuz/chromium').then((m) => m.default || m)
-      executablePath = await chromium.executablePath()
+      // Vercel / Lambda environment — use @sparticuz/chromium-min (no bundled binary)
+      // Binary is downloaded at runtime from GitHub Releases
+      const chromium = await import('@sparticuz/chromium-min').then((m) => m.default || m)
+      executablePath = await chromium.executablePath(
+        'https://github.com/Sparticuz/chromium/releases/download/v149.0.0/chromium-v149.0.0-pack.tar'
+      )
       launchArgs = chromium.args as string[]
     }
 
