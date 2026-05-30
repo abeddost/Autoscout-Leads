@@ -17,7 +17,15 @@ const PRICE_TO = 70000
 const ZIP_CODE = '55294'
 const RADIUS_KM = 100
 const MAX_PAGES = 5
+export const MAX_AI_ANALYSIS_PER_RUN = 50
 const BASE_URL = 'https://www.autoscout24.de'
+
+export function shouldAnalyzeListingCandidate(listing: RawListing): boolean {
+  if (listing.market_price_rating == null || listing.market_price_rating > 2) return false
+  if (listing.year != null && listing.year < 2016) return false
+  if (listing.mileage != null && listing.mileage > 150000) return false
+  return true
+}
 
 function buildSearchUrl(brand: string, page: number): string {
   const params = new URLSearchParams({
@@ -117,6 +125,7 @@ function parseSearchListing(listing: Record<string, unknown>): RawListing | null
     const horsepower = getVehicleDetail(details, 'Leistung')
     const phone = (seller?.phones as Array<{ formattedNumber?: string; callTo?: string }> | undefined)?.[0]
     const images = (listing.images as string[] | undefined) || []
+    const priceEvaluation = Number(price?.priceEvaluation)
 
     return {
       listing_url: relativeUrl.startsWith('http') ? relativeUrl : `${BASE_URL}${relativeUrl}`,
@@ -140,6 +149,7 @@ function parseSearchListing(listing: Record<string, unknown>): RawListing | null
       equipment: [],
       image_urls: images.filter((img) => img.startsWith('http')).slice(0, 10),
       source_website: 'autoscout24',
+      market_price_rating: Number.isFinite(priceEvaluation) ? priceEvaluation : null,
     }
   } catch {
     return null

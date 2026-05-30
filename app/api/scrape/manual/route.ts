@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient, createServiceClient } from '@/lib/supabase/server'
-import { scrapeAutoScout24 } from '@/lib/scraper/autoscout24'
+import { MAX_AI_ANALYSIS_PER_RUN, scrapeAutoScout24, shouldAnalyzeListingCandidate } from '@/lib/scraper/autoscout24'
 import { analyzeCarWithGemini, isGeminiAnalysisError, meetsLeadThreshold } from '@/lib/gemini/analyze'
 
 export async function POST() {
@@ -16,6 +16,7 @@ export async function POST() {
   const errors: string[] = []
   let totalChecked = 0
   let totalSaved = 0
+  let totalCandidates = 0
   let fatalError: string | null = null
   let fatalStatus = 500
 
@@ -27,7 +28,14 @@ export async function POST() {
 
     console.log(`[manual-scrape] Found ${listings.length} raw listings from ${checked} checked`)
 
-    for (const listing of listings) {
+    const candidates = listings
+      .filter(shouldAnalyzeListingCandidate)
+      .slice(0, MAX_AI_ANALYSIS_PER_RUN)
+    totalCandidates = candidates.length
+
+    console.log(`[manual-scrape] Analyzing ${totalCandidates} pre-filtered candidates with Gemini`)
+
+    for (const listing of candidates) {
       try {
         const { data: existing } = await supabase
           .from('car_leads')
@@ -117,6 +125,7 @@ export async function POST() {
       return NextResponse.json({
         error: fatalError,
         checked: totalChecked,
+        candidates: totalCandidates,
         saved: totalSaved,
         errors: errors.slice(0, 10),
       }, { status: fatalStatus })
@@ -125,6 +134,7 @@ export async function POST() {
     return NextResponse.json({
       success: true,
       checked: totalChecked,
+      candidates: totalCandidates,
       saved: totalSaved,
       errors: errors.slice(0, 10),
     })

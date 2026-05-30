@@ -20,6 +20,7 @@ export interface RawListing {
   equipment: string[]
   image_urls: string[]
   source_website: string
+  market_price_rating?: number | null
 }
 
 export interface ScrapeResult {

@@ -4,7 +4,7 @@ import { useState } from 'react'
 
 export default function ScrapeButton() {
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<{ saved?: number; checked?: number; error?: string } | null>(null)
+  const [result, setResult] = useState<{ saved?: number; checked?: number; candidates?: number; error?: string } | null>(null)
 
   async function handleScrape() {
     setLoading(true)
@@ -14,7 +14,7 @@ export default function ScrapeButton() {
         method: 'POST',
       })
       const text = await res.text()
-      let data: { saved?: number; checked?: number; error?: string }
+      let data: { saved?: number; checked?: number; candidates?: number; error?: string }
       try {
         data = text ? JSON.parse(text) : {}
       } catch {
@@ -38,7 +38,8 @@ export default function ScrapeButton() {
     <div className="flex items-center gap-3">
       {result && !result.error && (
         <span className="text-sm text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5">
-          Saved {result.saved} of {result.checked} leads
+          Saved {result.saved} of {result.candidates ?? result.checked} candidates
+          {typeof result.checked === 'number' ? ` (${result.checked} checked)` : ''}
         </span>
       )}
       {result?.error && (
