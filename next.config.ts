@@ -12,6 +12,10 @@ const nextConfig: NextConfig = {
   },
   // Allow larger serverless function size for Playwright
   serverExternalPackages: ['playwright-core', '@sparticuz/chromium-min'],
+  outputFileTracingIncludes: {
+    '/api/scrape': ['./node_modules/playwright-core/browsers.json'],
+    '/api/scrape/manual': ['./node_modules/playwright-core/browsers.json'],
+  },
 };
 
 export default nextConfig;
