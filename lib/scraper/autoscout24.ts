@@ -21,6 +21,7 @@ const BASE_URL = 'https://www.autoscout24.de'
 
 function buildSearchUrl(brand: string, page: number): string {
   const params = new URLSearchParams({
+    atype: 'C',
     sort: 'age',
     desc: '1',
     pricefrom: String(PRICE_FROM),
@@ -29,7 +30,7 @@ function buildSearchUrl(brand: string, page: number): string {
     zip_distance: String(RADIUS_KM),
     size: '20',
     page: String(page),
-    atype: 'private',
+    custtype: 'P',
   })
   return `${BASE_URL}/lst/${brand}?${params.toString()}`
 }
@@ -51,7 +52,16 @@ function parseHorsepower(str: string | null | undefined): number | null {
 
 function parsePrice(str: string | null | undefined): number | null {
   if (!str) return null
-  const cleaned = str.replace(/[^\d,.-]/g, '').replace(',', '.')
+  const match = str.match(/[\d.,]+/)
+  if (!match) return null
+  let cleaned = match[0]
+  if (cleaned.includes('.') && cleaned.includes(',')) {
+    cleaned = cleaned.replace(/\./g, '').replace(',', '.')
+  } else if (/^\d{1,3}(\.\d{3})+$/.test(cleaned)) {
+    cleaned = cleaned.replace(/\./g, '')
+  } else {
+    cleaned = cleaned.replace(',', '.')
+  }
   const num = parseFloat(cleaned)
   return isNaN(num) ? null : num
 }
@@ -66,6 +76,83 @@ function parseMileage(str: string | null | undefined): number | null {
 function extractYearFromTitle(title: string): number | null {
   const match = title.match(/\b(19|20)\d{2}\b/)
   return match ? parseInt(match[0], 10) : null
+}
+
+function extractYearFromRegistration(str: string | null | undefined): number | null {
+  if (!str) return null
+  const match = str.match(/\b(19|20)\d{2}\b/)
+  return match ? parseInt(match[0], 10) : null
+}
+
+function getVehicleDetail(
+  details: Array<{ data?: string; ariaLabel?: string }> | undefined,
+  ariaLabel: string
+): string | null {
+  return details?.find((detail) => detail.ariaLabel === ariaLabel)?.data ?? null
+}
+
+// Parse listing cards from AutoScout24 search-result __NEXT_DATA__ JSON.
+function parseSearchListing(listing: Record<string, unknown>): RawListing | null {
+  try {
+    const vehicle = listing.vehicle as Record<string, unknown> | undefined
+    const seller = listing.seller as Record<string, unknown> | undefined
+    const location = listing.location as Record<string, unknown> | undefined
+    const price = listing.price as Record<string, unknown> | undefined
+    const details = listing.vehicleDetails as Array<{ data?: string; ariaLabel?: string }> | undefined
+
+    const sellerType = (seller?.type as string | undefined) || ''
+    if (sellerType && sellerType !== 'PrivateSeller') return null
+
+    const relativeUrl = listing.url as string | undefined
+    if (!relativeUrl) return null
+
+    const make = (vehicle?.make as string) || ''
+    const modelStr = (vehicle?.model as string) || ''
+    const modelVersion = (vehicle?.modelVersionInput as string) || ''
+    const title = `${make} ${modelStr} ${modelVersion}`.replace(/\s+/g, ' ').trim()
+    const priceRaw = parsePrice(price?.priceFormatted as string | undefined)
+    if (!priceRaw || priceRaw < PRICE_FROM || priceRaw > PRICE_TO) return null
+
+    const firstRegistration = getVehicleDetail(details, 'Erstzulassung')
+    const horsepower = getVehicleDetail(details, 'Leistung')
+    const phone = (seller?.phones as Array<{ formattedNumber?: string; callTo?: string }> | undefined)?.[0]
+    const images = (listing.images as string[] | undefined) || []
+
+    return {
+      listing_url: relativeUrl.startsWith('http') ? relativeUrl : `${BASE_URL}${relativeUrl}`,
+      vehicle_title: title || 'Unknown vehicle',
+      brand: make,
+      model: modelStr,
+      year: extractYearFromRegistration(firstRegistration) ?? extractYearFromTitle(title),
+      price: priceRaw,
+      mileage: parseMileage((vehicle?.mileageInKm as string | undefined) || getVehicleDetail(details, 'Kilometerstand')),
+      fuel_type: (vehicle?.fuel as string | undefined) || getVehicleDetail(details, 'Kraftstoff'),
+      transmission: (vehicle?.transmission as string | undefined) || getVehicleDetail(details, 'Getriebe'),
+      horsepower: parseHorsepower(horsepower),
+      plz: (location?.zip as string) || null,
+      city: (location?.city as string) || null,
+      seller_name: (seller?.contactName as string) || (seller?.companyName as string) || null,
+      seller_mobile: phone?.formattedNumber || phone?.callTo || null,
+      seller_email: null,
+      seller_type: 'private',
+      accident_info: null,
+      number_of_owners: null,
+      equipment: [],
+      image_urls: images.filter((img) => img.startsWith('http')).slice(0, 10),
+      source_website: 'autoscout24',
+    }
+  } catch {
+    return null
+  }
+}
+
+function parseSearchNextData(data: Record<string, unknown>): RawListing[] {
+  const props = data.props as Record<string, unknown> | undefined
+  const pageProps = props?.pageProps as Record<string, unknown> | undefined
+  const searchListings = pageProps?.listings as Record<string, unknown>[] | undefined
+  return (searchListings || [])
+    .map(parseSearchListing)
+    .filter((listing): listing is RawListing => Boolean(listing))
 }
 
 // Parse listing data from AutoScout24 __NEXT_DATA__ JSON
@@ -281,19 +368,36 @@ export async function scrapeAutoScout24(): Promise<ScrapeResult> {
           await searchPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
           await randomDelay()
 
-          // Extract listing URLs from search results page
-          const listingUrls: string[] = await searchPage.evaluate(() => {
-            const links = Array.from(
-              document.querySelectorAll('a[href*="/angebote/"]')
-            ) as HTMLAnchorElement[]
-            return [...new Set(links.map((a) => a.href))].filter(
-              (h) => h.includes('/angebote/')
-            )
+          const nextDataJson = await searchPage.evaluate(() => {
+            return document.getElementById('__NEXT_DATA__')?.textContent || null
           })
+
+          const searchListings = nextDataJson
+            ? parseSearchNextData(JSON.parse(nextDataJson) as Record<string, unknown>)
+            : []
+
+          // Fallback for older AutoScout24 markup that exposed detail links directly.
+          const listingUrls: string[] = searchListings.length > 0
+            ? []
+            : await searchPage.evaluate(() => {
+                const links = Array.from(
+                  document.querySelectorAll('a[href*="/angebote/"]')
+                ) as HTMLAnchorElement[]
+                return [...new Set(links.map((a) => a.href))].filter(
+                  (h) => h.includes('/angebote/')
+                )
+              })
 
           await ctx.close()
 
-          if (listingUrls.length === 0) break // No more results for this brand
+          if (searchListings.length === 0 && listingUrls.length === 0) break // No more results for this brand
+
+          for (const listing of searchListings) {
+            if (seenUrls.has(listing.listing_url)) continue
+            seenUrls.add(listing.listing_url)
+            checked++
+            listings.push(listing)
+          }
 
           // Visit each listing detail page
           for (const listingUrl of listingUrls) {
