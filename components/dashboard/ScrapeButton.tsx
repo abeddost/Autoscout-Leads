@@ -10,11 +10,8 @@ export default function ScrapeButton() {
     setLoading(true)
     setResult(null)
     try {
-      const res = await fetch('/api/scrape', {
+      const res = await fetch('/api/scrape/manual', {
         method: 'POST',
-        headers: {
-          authorization: `Bearer ${process.env.NEXT_PUBLIC_CRON_SECRET || ''}`,
-        },
       })
       const data = await res.json()
       setResult(data)
