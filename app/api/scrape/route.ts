@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { scrapeAutoScout24 } from '@/lib/scraper/autoscout24'
-import { analyzeCarWithGemini, meetsLeadThreshold } from '@/lib/gemini/analyze'
+import { analyzeCarWithGemini, isGeminiAnalysisError, meetsLeadThreshold } from '@/lib/gemini/analyze'
 import { createServiceClient } from '@/lib/supabase/server'
 
 function verifySecret(request: Request): boolean {
@@ -17,6 +17,8 @@ export async function POST(request: Request) {
   const errors: string[] = []
   let totalChecked = 0
   let totalSaved = 0
+  let fatalError: string | null = null
+  let fatalStatus = 500
 
   try {
     console.log('[scrape] Starting AutoScout24 scrape…')
@@ -94,6 +96,14 @@ export async function POST(request: Request) {
           totalSaved++
         }
       } catch (err) {
+        if (isGeminiAnalysisError(err)) {
+          fatalError = err.message
+          fatalStatus = err.kind === 'quota' ? 429 : 500
+          errors.push(err.message)
+          console.error('[scrape] Stopping due to Gemini error:', err.message)
+          break
+        }
+
         errors.push(`Processing error: ${String(err)}`)
       }
     }
@@ -109,6 +119,15 @@ export async function POST(request: Request) {
     })
 
     console.log(`[scrape] Done. Saved ${totalSaved} leads.`)
+
+    if (fatalError) {
+      return NextResponse.json({
+        error: fatalError,
+        checked: totalChecked,
+        saved: totalSaved,
+        errors: errors.slice(0, 10),
+      }, { status: fatalStatus })
+    }
 
     return NextResponse.json({
       success: true,

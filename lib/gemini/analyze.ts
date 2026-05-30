@@ -10,6 +10,27 @@ export interface GeminiAnalysis {
   ai_recommendation: string
 }
 
+export type GeminiAnalysisErrorKind = 'quota' | 'config'
+
+export class GeminiAnalysisError extends Error {
+  constructor(
+    public kind: GeminiAnalysisErrorKind,
+    message: string,
+    public status?: number
+  ) {
+    super(message)
+    this.name = 'GeminiAnalysisError'
+  }
+}
+
+export function isGeminiAnalysisError(err: unknown): err is GeminiAnalysisError {
+  return err instanceof GeminiAnalysisError
+}
+
+export function getGeminiModel() {
+  return process.env.GEMINI_MODEL || 'gemini-2.5-flash'
+}
+
 const ANALYSIS_PROMPT = (car: Partial<CarLead>) => `
 You are an expert German used car market analyst. Analyze the following private car listing from AutoScout24.de and provide a structured JSON response.
 
@@ -60,12 +81,68 @@ function getClient() {
   return geminiClient
 }
 
+function getErrorStatus(err: unknown): number | undefined {
+  return typeof err === 'object' && err !== null && 'status' in err
+    ? Number((err as { status?: unknown }).status)
+    : undefined
+}
+
+function getErrorText(err: unknown): string {
+  if (err instanceof Error) return err.message
+
+  try {
+    return JSON.stringify(err)
+  } catch {
+    return String(err)
+  }
+}
+
+function classifyGeminiError(err: unknown, model: string): GeminiAnalysisError | null {
+  const status = getErrorStatus(err)
+  const message = getErrorText(err)
+  const lower = message.toLowerCase()
+
+  if (
+    status === 429 ||
+    lower.includes('resource_exhausted') ||
+    lower.includes('quota') ||
+    lower.includes('rate limit')
+  ) {
+    return new GeminiAnalysisError(
+      'quota',
+      `Gemini quota exceeded for ${model}. Check billing/rate limits or set GEMINI_MODEL.`,
+      status
+    )
+  }
+
+  if (
+    status === 400 ||
+    status === 401 ||
+    status === 403 ||
+    lower.includes('api key') ||
+    lower.includes('permission_denied') ||
+    lower.includes('unauthenticated') ||
+    lower.includes('invalid_argument') ||
+    lower.includes('not found')
+  ) {
+    return new GeminiAnalysisError(
+      'config',
+      `Gemini configuration failed for ${model}. Check GEMINI_API_KEY, billing, and GEMINI_MODEL.`,
+      status
+    )
+  }
+
+  return null
+}
+
 export async function analyzeCarWithGemini(car: Partial<CarLead>): Promise<GeminiAnalysis | null> {
+  const model = getGeminiModel()
+
   try {
     const client = getClient()
 
     const response = await client.models.generateContent({
-      model: 'gemini-2.0-flash',
+      model,
       contents: ANALYSIS_PROMPT(car),
       config: {
         responseMimeType: 'application/json',
@@ -89,6 +166,9 @@ export async function analyzeCarWithGemini(car: Partial<CarLead>): Promise<Gemin
       ai_recommendation: parsed.ai_recommendation?.slice(0, 300) || '',
     }
   } catch (err) {
+    const analysisError = classifyGeminiError(err, model)
+    if (analysisError) throw analysisError
+
     console.error('Gemini analysis error:', err)
     return null
   }
