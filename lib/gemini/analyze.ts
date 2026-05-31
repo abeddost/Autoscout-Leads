@@ -174,8 +174,11 @@ export async function analyzeCarWithGemini(car: Partial<CarLead>): Promise<Gemin
       contents: ANALYSIS_PROMPT(car),
       config: {
         responseMimeType: 'application/json',
-        temperature: 0.3,
-        maxOutputTokens: 2000,
+        temperature: 0.2,
+        maxOutputTokens: 3000,
+        thinkingConfig: {
+          thinkingBudget: 0,
+        },
       },
     })
 
@@ -183,7 +186,7 @@ export async function analyzeCarWithGemini(car: Partial<CarLead>): Promise<Gemin
     if (finishReason === 'MAX_TOKENS') {
       throw new GeminiAnalysisError(
         'output',
-        'Gemini response was truncated. Increase maxOutputTokens or disable thinking.'
+        `Gemini response was truncated for ${model} with finish reason ${finishReason}. Increase maxOutputTokens or disable thinking.`
       )
     }
 
