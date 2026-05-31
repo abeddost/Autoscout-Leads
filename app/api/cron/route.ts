@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { createScrapeJob, findRunnableScrapeJob, runScrapeJobStep } from '@/lib/scraper/jobs'
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization')
@@ -7,13 +6,19 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  try {
-    const existingJobId = await findRunnableScrapeJob()
-    const job = existingJobId
-      ? await runScrapeJobStep(existingJobId)
-      : await runScrapeJobStep((await createScrapeJob(null)).id)
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
-    return NextResponse.json({ cron: 'complete', job })
+  try {
+    const response = await fetch(`${appUrl}/api/scrape`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${process.env.CRON_SECRET}`,
+        'content-type': 'application/json',
+      },
+    })
+
+    const result = await response.json()
+    return NextResponse.json({ cron: 'complete', ...result })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }

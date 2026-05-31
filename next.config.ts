@@ -15,7 +15,6 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     '/api/scrape': ['./node_modules/playwright-core/browsers.json'],
     '/api/scrape/manual': ['./node_modules/playwright-core/browsers.json'],
-    '/api/scrape/jobs/[id]/run': ['./node_modules/playwright-core/browsers.json'],
   },
 };
 

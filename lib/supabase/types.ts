@@ -1,6 +1,4 @@
 export type CarLeadStatus = 'new' | 'reviewed' | 'contacted' | 'closed'
-export type ScrapeJobStatus = 'queued' | 'scraping' | 'analyzing' | 'completed' | 'failed'
-export type ScrapeJobItemStatus = 'pending' | 'processing' | 'skipped' | 'saved' | 'failed'
 
 export interface CarLead {
   id: string
@@ -47,44 +45,9 @@ export interface SearchLog {
   errors: string[]
 }
 
-export interface ScrapeJob {
-  id: string
-  created_at: string
-  updated_at: string
-  started_at: string | null
-  completed_at: string | null
-  created_by: string | null
-  source_website: string
-  status: ScrapeJobStatus
-  checked_count: number
-  candidate_count: number
-  processed_count: number
-  saved_count: number
-  failed_count: number
-  latest_error: string | null
-  errors: string[]
-}
-
-export interface ScrapeJobItem {
-  id: string
-  created_at: string
-  updated_at: string
-  job_id: string
-  listing_url: string
-  raw_listing: unknown
-  status: ScrapeJobItemStatus
-  saved_lead_id: string | null
-  error: string | null
-  analyzed_at: string | null
-}
-
 export type CarLeadInsert = Omit<CarLead, 'id' | 'created_at'>
 export type CarLeadUpdate = Partial<CarLeadInsert>
 export type SearchLogInsert = Omit<SearchLog, 'id' | 'created_at'>
-export type ScrapeJobInsert = Partial<Omit<ScrapeJob, 'id' | 'created_at' | 'updated_at'>>
-export type ScrapeJobUpdate = Partial<ScrapeJobInsert>
-export type ScrapeJobItemInsert = Partial<Omit<ScrapeJobItem, 'id' | 'created_at' | 'updated_at'>>
-export type ScrapeJobItemUpdate = Partial<ScrapeJobItemInsert>
 
 export interface Database {
   public: {
@@ -105,30 +68,6 @@ export interface Database {
         Row: SearchLog
         Insert: SearchLogInsert
         Update: Partial<SearchLogInsert>
-        Relationships: {
-          foreignKeyName: string
-          columns: string[]
-          isOneToOne: boolean
-          referencedRelation: string
-          referencedColumns: string[]
-        }[]
-      }
-      scrape_jobs: {
-        Row: ScrapeJob
-        Insert: ScrapeJobInsert
-        Update: ScrapeJobUpdate
-        Relationships: {
-          foreignKeyName: string
-          columns: string[]
-          isOneToOne: boolean
-          referencedRelation: string
-          referencedColumns: string[]
-        }[]
-      }
-      scrape_job_items: {
-        Row: ScrapeJobItem
-        Insert: ScrapeJobItemInsert
-        Update: ScrapeJobItemUpdate
         Relationships: {
           foreignKeyName: string
           columns: string[]
