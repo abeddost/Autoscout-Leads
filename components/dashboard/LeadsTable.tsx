@@ -73,7 +73,7 @@ export default function LeadsTable({ leads, page, totalCount, pageSize, sortBy, 
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider">
-                  <SortableHeader col="date_found" label="Date Found" sortBy={sortBy} sortDir={sortDir} searchParams={currentParams} />
+                  <SortableHeader col="created_at" label="Date Found" sortBy={sortBy} sortDir={sortDir} searchParams={currentParams} />
                 </th>
                 <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider">
                   <SortableHeader col="listing_date" label="Date Listed" sortBy={sortBy} sortDir={sortDir} searchParams={currentParams} />

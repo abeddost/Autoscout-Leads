@@ -8,8 +8,8 @@ import ScrapeButton from '@/components/dashboard/ScrapeButton'
 
 const PAGE_SIZE = 20
 
-type SortColumn = 'date_found' | 'listing_date' | 'price' | 'model' | 'mileage' | 'deal_score'
-const VALID_SORT_COLS: SortColumn[] = ['date_found', 'listing_date', 'price', 'model', 'mileage', 'deal_score']
+type SortColumn = 'created_at' | 'date_found' | 'listing_date' | 'price' | 'model' | 'mileage' | 'deal_score'
+const VALID_SORT_COLS: SortColumn[] = ['created_at', 'date_found', 'listing_date', 'price', 'model', 'mileage', 'deal_score']
 
 interface SearchParams {
   page?: string
@@ -35,7 +35,7 @@ export default async function DashboardPage({
   const minScore = parseInt(params.minScore || '0', 10)
   const sortBy: SortColumn = VALID_SORT_COLS.includes(params.sortBy as SortColumn)
     ? (params.sortBy as SortColumn)
-    : 'date_found'
+    : 'created_at'
   const sortDir = params.sortDir === 'asc' ? true : false // ascending = true
   const minPrice = parseFloat(params.minPrice || '0') || 0
   const maxPrice = parseFloat(params.maxPrice || '0') || 0
@@ -50,9 +50,9 @@ export default async function DashboardPage({
     .order(sortBy, { ascending: sortDir })
     .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
 
-  // Secondary sort: always add deal_score as tiebreaker (unless already sorting by it)
-  if (sortBy !== 'deal_score') {
-    query = query.order('deal_score', { ascending: false })
+  // Secondary sort: use created_at as tiebreaker for all columns except created_at itself
+  if (sortBy !== 'created_at') {
+    query = query.order('created_at', { ascending: false })
   }
 
   if (brand) query = query.ilike('brand', `%${brand}%`)
