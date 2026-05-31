@@ -6,15 +6,22 @@ import {
   hasSellerPhone,
   scrapeAutoScout24,
 } from '@/lib/scraper/autoscout24'
-import { analyzeCarWithGemini, isGeminiAnalysisError, meetsLeadThreshold } from '@/lib/gemini/analyze'
+import { analyzeCarWithGemini, isGeminiAnalysisError } from '@/lib/gemini/analyze'
+import { estimateMarketValuation, meetsValuationThreshold } from '@/lib/valuation/market'
 
-export async function POST() {
+export async function POST(request: Request) {
   // Verify the user is logged in via their session cookie
   const supabaseAuth = await createClient()
   const { data: { user } } = await supabaseAuth.auth.getUser()
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  // Verify scrape password
+  const scrapePassword = request.headers.get('x-scrape-password')
+  if (!scrapePassword || scrapePassword !== process.env.SCRAPE_PASSWORD) {
+    return NextResponse.json({ error: 'Incorrect password' }, { status: 401 })
   }
 
   const supabase = createServiceClient()
@@ -31,6 +38,8 @@ export async function POST() {
     accident: 0,
     insert_error: 0,
     no_phone: 0,
+    not_profitable: 0,
+    weak_evidence: 0,
   }
 
   try {
@@ -49,7 +58,7 @@ export async function POST() {
       .slice(0, MAX_AI_ANALYSIS_PER_RUN)
     totalCandidates = candidates.length
 
-    console.log(`[manual-scrape] Analyzing ${totalCandidates} pre-filtered candidates with Gemini`)
+    console.log(`[manual-scrape] Valuing ${totalCandidates} pre-filtered candidates before Gemini`)
 
     for (const listing of candidates) {
       try {
@@ -64,13 +73,14 @@ export async function POST() {
           continue
         }
 
-        const analysis = await analyzeCarWithGemini(listing)
-        if (!analysis) {
-          skipCounts.no_analysis++
+        const valuation = estimateMarketValuation(listing, listings)
+
+        if (valuation.potential_profit < 2000) {
+          skipCounts.not_profitable++
           continue
         }
 
-        if (!meetsLeadThreshold(analysis, listing.price)) {
+        if (!meetsValuationThreshold(valuation, listing.price)) {
           skipCounts.below_threshold++
           continue
         }
@@ -82,6 +92,16 @@ export async function POST() {
           accidentLower.includes('damaged')
         ) {
           skipCounts.accident++
+          continue
+        }
+
+        if (valuation.evidence_strength === 'weak') {
+          skipCounts.weak_evidence++
+        }
+
+        const analysis = await analyzeCarWithGemini(listing, valuation)
+        if (!analysis) {
+          skipCounts.no_analysis++
           continue
         }
 

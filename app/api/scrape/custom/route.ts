@@ -9,6 +9,12 @@ export async function POST(request: Request) {
   const { data: { user } } = await supabaseAuth.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  // Verify scrape password
+  const scrapePassword = request.headers.get('x-scrape-password')
+  if (!scrapePassword || scrapePassword !== process.env.SCRAPE_PASSWORD) {
+    return NextResponse.json({ error: 'Incorrect password' }, { status: 401 })
+  }
+
   const body = await request.json().catch(() => ({}))
   const brand = (body.brand as string | undefined)?.trim().toLowerCase()
   const model = (body.model as string | undefined)?.trim() || undefined
