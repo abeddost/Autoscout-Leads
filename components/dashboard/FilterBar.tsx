@@ -3,7 +3,11 @@
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import { useCallback, useState, useEffect } from 'react'
 
-const BRANDS = ['BMW', 'Mercedes-Benz', 'Audi', 'Porsche', 'Lexus', 'Jaguar', 'Volvo', 'Volkswagen', 'CUPRA']
+const BRANDS = [
+  'BMW', 'Mercedes-Benz', 'Audi', 'Porsche',
+  'Lexus', 'Jaguar', 'Volvo', 'Volkswagen', 'CUPRA',
+  'Maserati', 'MINI', 'SEAT', 'Skoda', 'Toyota', 'Kia', 'Ford', 'Opel',
+]
 const STATUSES = ['new', 'reviewed', 'contacted', 'closed']
 
 export default function FilterBar() {

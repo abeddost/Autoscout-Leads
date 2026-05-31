@@ -49,26 +49,39 @@ Car Details:
 - Number of Previous Owners: ${car.number_of_owners ?? 'Unknown'}
 - Equipment/Options: ${Array.isArray(car.equipment) && car.equipment.length > 0 ? car.equipment.slice(0, 20).join(', ') : 'Not listed'}
 
-Market context: German used car market, May 2025. Consider regional pricing near Mainz/Rhein-Main area (PLZ 55294, Bodenheim).
+Market context: German used car market, 2025. Consider regional pricing near Mainz/Rhein-Main area (PLZ 55294, Bodenheim).
 
-Scoring factors:
-1. Price relative to current German market value for this exact spec (30% weight)
-2. Mileage relative to average for the age (20% weight)
-3. Age of the vehicle (15% weight)
-4. Brand and model resale demand in Germany (15% weight)
-5. Equipment and options package (10% weight)
-6. Seller type, accident history, number of owners (10% weight)
+Step 1 — Estimate the true market value for this exact car (brand, model, year, mileage, fuel, transmission, equipment) based on current German private market prices. Be precise.
 
-Risk factors to consider: high mileage, accident history, many owners, uncommon spec, low resale demand.
+Step 2 — Score the deal using the FULL 0–100 range below. Most cars listed at fair market price score 60–70. Only genuinely undervalued listings exceed 85.
 
-Respond ONLY with this exact JSON structure (no markdown, no explanation):
+DEAL SCORE RUBRIC (mandatory — do not compress scores into a narrow band):
+- 95–100: Exceptional steal — 30%+ below market, low mileage, clean history, high-demand spec
+- 85–94:  Strong deal — 15–29% below market, good condition, solid demand
+- 75–84:  Good value — 8–14% below market, minor concerns acceptable
+- 60–74:  Fair — listed at or within 7% of market value
+- 40–59:  Weak — slightly above market or notable concerns (high mileage, age, owners)
+- 20–39:  Poor — overpriced relative to condition and market
+- 0–19:   Avoid — significantly overpriced or major red flags
+
+SCORING FACTORS (apply all):
+1. Price vs. market value (30% weight) — most important
+2. Mileage vs. age-appropriate average (20% weight)
+3. Vehicle age (15% weight)
+4. Brand/model demand and resale value in Germany (15% weight)
+5. Equipment package completeness (10% weight)
+6. Accident history, owner count, seller type (10% weight)
+
+RISK SCORE (0 = no risk, 100 = very risky): consider mileage, accident history, owners, age, uncommon spec.
+
+Respond ONLY with this exact JSON (no markdown, no explanation outside the JSON):
 {
-  "estimated_market_value": <number in euros, integer>,
-  "potential_profit": <estimated_market_value minus listed price, integer>,
-  "deal_score": <0-100 integer, where 100 is an exceptional deal>,
-  "risk_score": <0-100 integer, where 0 is lowest risk>,
-  "ai_summary": "<2-3 sentences analyzing this specific car's value proposition in the German market>",
-  "ai_recommendation": "<Start with one of: 'Strong Buy', 'Buy', 'Consider', 'Pass'. Then one sentence with the key reason.>"
+  "estimated_market_value": <integer euros — realistic current private market value>,
+  "potential_profit": <estimated_market_value minus listed price, can be negative>,
+  "deal_score": <integer 0–100 — use the full rubric above, not a narrow band>,
+  "risk_score": <integer 0–100>,
+  "ai_summary": "<2–3 sentences: state the estimated market value, explain why this is or isn't a deal, mention the key positive and negative factors>",
+  "ai_recommendation": "<Start with exactly one of: 'Strong Buy', 'Buy', 'Consider', 'Pass'. Then one sentence with the single most important reason.>"
 }
 `
 
@@ -161,11 +174,8 @@ export async function analyzeCarWithGemini(car: Partial<CarLead>): Promise<Gemin
       contents: ANALYSIS_PROMPT(car),
       config: {
         responseMimeType: 'application/json',
-        temperature: 0.2,
-        maxOutputTokens: 1500,
-        thinkingConfig: {
-          thinkingBudget: 0,
-        },
+        temperature: 0.3,
+        maxOutputTokens: 2000,
       },
     })
 
@@ -214,7 +224,7 @@ export function meetsLeadThreshold(analysis: GeminiAnalysis, price: number): boo
   return (
     analysis.deal_score >= 80 &&
     analysis.potential_profit >= 2000 &&
-    price >= 20000 &&
+    price >= 10000 &&
     price <= 70000
   )
 }

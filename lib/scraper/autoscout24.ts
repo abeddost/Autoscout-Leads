@@ -10,9 +10,17 @@ const BRANDS = [
   'volvo',
   'volkswagen',
   'cupra',
+  'maserati',
+  'mini',
+  'seat',
+  'skoda',
+  'toyota',
+  'kia',
+  'ford',
+  'opel',
 ]
 
-const PRICE_FROM = 20000
+const PRICE_FROM = 10000
 const PRICE_TO = 70000
 const ZIP_CODE = '55294'
 const RADIUS_KM = 100
