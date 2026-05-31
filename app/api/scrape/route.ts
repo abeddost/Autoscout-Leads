@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server'
-import { MAX_AI_ANALYSIS_PER_RUN, scrapeAutoScout24, shouldAnalyzeListingCandidate } from '@/lib/scraper/autoscout24'
+import {
+  MAX_AI_ANALYSIS_PER_RUN,
+  hasCandidateMarketProfile,
+  hasSellerPhone,
+  scrapeAutoScout24,
+} from '@/lib/scraper/autoscout24'
 import { analyzeCarWithGemini, isGeminiAnalysisError, meetsLeadThreshold } from '@/lib/gemini/analyze'
 import { createServiceClient } from '@/lib/supabase/server'
 
@@ -20,6 +25,14 @@ export async function POST(request: Request) {
   let totalCandidates = 0
   let fatalError: string | null = null
   let fatalStatus = 500
+  const skipCounts = {
+    duplicate: 0,
+    no_analysis: 0,
+    below_threshold: 0,
+    accident: 0,
+    insert_error: 0,
+    no_phone: 0,
+  }
 
   try {
     console.log('[scrape] Starting AutoScout24 scrape…')
@@ -29,8 +42,11 @@ export async function POST(request: Request) {
 
     console.log(`[scrape] Found ${listings.length} raw listings from ${checked} checked`)
 
-    const candidates = listings
-      .filter(shouldAnalyzeListingCandidate)
+    const marketCandidates = listings.filter(hasCandidateMarketProfile)
+    skipCounts.no_phone = marketCandidates.filter((listing) => !hasSellerPhone(listing)).length
+
+    const candidates = marketCandidates
+      .filter(hasSellerPhone)
       .slice(0, MAX_AI_ANALYSIS_PER_RUN)
     totalCandidates = candidates.length
 
@@ -45,14 +61,23 @@ export async function POST(request: Request) {
           .eq('listing_url', listing.listing_url)
           .single()
 
-        if (existing) continue
+        if (existing) {
+          skipCounts.duplicate++
+          continue
+        }
 
         // Run Gemini analysis
         const analysis = await analyzeCarWithGemini(listing)
-        if (!analysis) continue
+        if (!analysis) {
+          skipCounts.no_analysis++
+          continue
+        }
 
         // Apply lead filter thresholds
-        if (!meetsLeadThreshold(analysis, listing.price)) continue
+        if (!meetsLeadThreshold(analysis, listing.price)) {
+          skipCounts.below_threshold++
+          continue
+        }
 
         // Check for accident — skip major accidents
         const accidentLower = (listing.accident_info || '').toLowerCase()
@@ -61,6 +86,7 @@ export async function POST(request: Request) {
           accidentLower.includes('accident reported') ||
           accidentLower.includes('damaged')
         ) {
+          skipCounts.accident++
           continue
         }
 
@@ -95,10 +121,12 @@ export async function POST(request: Request) {
           ai_summary: analysis.ai_summary,
           ai_recommendation: analysis.ai_recommendation,
           source_website: listing.source_website,
+          listing_date: listing.listing_date ?? null,
           status: 'new',
         })
 
         if (insertError) {
+          skipCounts.insert_error++
           errors.push(`Insert error for ${listing.listing_url}: ${insertError.message}`)
         } else {
           totalSaved++
@@ -106,7 +134,7 @@ export async function POST(request: Request) {
       } catch (err) {
         if (isGeminiAnalysisError(err)) {
           fatalError = err.message
-          fatalStatus = err.kind === 'quota' ? 429 : 500
+          fatalStatus = err.kind === 'quota' ? 429 : err.kind === 'output' ? 502 : 500
           errors.push(err.message)
           console.error('[scrape] Stopping due to Gemini error:', err.message)
           break
@@ -134,6 +162,7 @@ export async function POST(request: Request) {
         checked: totalChecked,
         candidates: totalCandidates,
         saved: totalSaved,
+        skipCounts,
         errors: errors.slice(0, 10),
       }, { status: fatalStatus })
     }
@@ -143,6 +172,7 @@ export async function POST(request: Request) {
       checked: totalChecked,
       candidates: totalCandidates,
       saved: totalSaved,
+      skipCounts,
       errors: errors.slice(0, 10),
     })
   } catch (err) {

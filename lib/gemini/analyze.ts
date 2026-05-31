@@ -10,7 +10,7 @@ export interface GeminiAnalysis {
   ai_recommendation: string
 }
 
-export type GeminiAnalysisErrorKind = 'quota' | 'config'
+export type GeminiAnalysisErrorKind = 'quota' | 'config' | 'output'
 
 export class GeminiAnalysisError extends Error {
   constructor(
@@ -135,6 +135,21 @@ function classifyGeminiError(err: unknown, model: string): GeminiAnalysisError |
   return null
 }
 
+function getFinishReason(response: unknown): string | null {
+  if (typeof response !== 'object' || response === null || !('candidates' in response)) return null
+
+  const candidates = (response as { candidates?: unknown }).candidates
+  if (!Array.isArray(candidates)) return null
+
+  const firstCandidate = candidates[0]
+  if (typeof firstCandidate !== 'object' || firstCandidate === null || !('finishReason' in firstCandidate)) {
+    return null
+  }
+
+  const finishReason = (firstCandidate as { finishReason?: unknown }).finishReason
+  return typeof finishReason === 'string' ? finishReason : null
+}
+
 export async function analyzeCarWithGemini(car: Partial<CarLead>): Promise<GeminiAnalysis | null> {
   const model = getGeminiModel()
 
@@ -147,14 +162,33 @@ export async function analyzeCarWithGemini(car: Partial<CarLead>): Promise<Gemin
       config: {
         responseMimeType: 'application/json',
         temperature: 0.2,
-        maxOutputTokens: 512,
+        maxOutputTokens: 1500,
+        thinkingConfig: {
+          thinkingBudget: 0,
+        },
       },
     })
+
+    const finishReason = getFinishReason(response)
+    if (finishReason === 'MAX_TOKENS') {
+      throw new GeminiAnalysisError(
+        'output',
+        'Gemini response was truncated. Increase maxOutputTokens or disable thinking.'
+      )
+    }
 
     const text = response.text
     if (!text) return null
 
-    const parsed = JSON.parse(text) as GeminiAnalysis
+    let parsed: GeminiAnalysis
+    try {
+      parsed = JSON.parse(text) as GeminiAnalysis
+    } catch {
+      throw new GeminiAnalysisError(
+        'output',
+        'Gemini returned malformed JSON. The listing was not analyzed.'
+      )
+    }
 
     // Validate and clamp scores
     return {
@@ -166,6 +200,8 @@ export async function analyzeCarWithGemini(car: Partial<CarLead>): Promise<Gemin
       ai_recommendation: parsed.ai_recommendation?.slice(0, 300) || '',
     }
   } catch (err) {
+    if (err instanceof GeminiAnalysisError) throw err
+
     const analysisError = classifyGeminiError(err, model)
     if (analysisError) throw analysisError
 

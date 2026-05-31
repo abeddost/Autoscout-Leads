@@ -1,10 +1,25 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 export default function ScrapeButton() {
+  const router = useRouter()
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<{ saved?: number; checked?: number; candidates?: number; error?: string } | null>(null)
+  const [result, setResult] = useState<{
+    saved?: number
+    checked?: number
+    candidates?: number
+    error?: string
+    skipCounts?: {
+      duplicate?: number
+      no_analysis?: number
+      below_threshold?: number
+      accident?: number
+      insert_error?: number
+      no_phone?: number
+    }
+  } | null>(null)
 
   async function handleScrape() {
     setLoading(true)
@@ -14,7 +29,20 @@ export default function ScrapeButton() {
         method: 'POST',
       })
       const text = await res.text()
-      let data: { saved?: number; checked?: number; candidates?: number; error?: string }
+      let data: {
+        saved?: number
+        checked?: number
+        candidates?: number
+        error?: string
+        skipCounts?: {
+          duplicate?: number
+          no_analysis?: number
+          below_threshold?: number
+          accident?: number
+          insert_error?: number
+          no_phone?: number
+        }
+      }
       try {
         data = text ? JSON.parse(text) : {}
       } catch {
@@ -27,6 +55,7 @@ export default function ScrapeButton() {
       }
 
       setResult(data)
+      router.refresh()
     } catch {
       setResult({ error: 'Request failed' })
     } finally {
@@ -34,12 +63,24 @@ export default function ScrapeButton() {
     }
   }
 
+  const skipDetails = result?.skipCounts
+    ? [
+        result.skipCounts.below_threshold ? `${result.skipCounts.below_threshold} below threshold` : null,
+        result.skipCounts.no_phone ? `${result.skipCounts.no_phone} no phone` : null,
+        result.skipCounts.duplicate ? `${result.skipCounts.duplicate} duplicates` : null,
+        result.skipCounts.accident ? `${result.skipCounts.accident} accident` : null,
+        result.skipCounts.no_analysis ? `${result.skipCounts.no_analysis} no analysis` : null,
+        result.skipCounts.insert_error ? `${result.skipCounts.insert_error} insert errors` : null,
+      ].filter(Boolean).join(', ')
+    : ''
+
   return (
     <div className="flex items-center gap-3">
       {result && !result.error && (
         <span className="text-sm text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5">
           Saved {result.saved} of {result.candidates ?? result.checked} candidates
           {typeof result.checked === 'number' ? ` (${result.checked} checked)` : ''}
+          {skipDetails ? `; ${skipDetails}` : ''}
         </span>
       )}
       {result?.error && (

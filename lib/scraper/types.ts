@@ -20,6 +20,7 @@ export interface RawListing {
   equipment: string[]
   image_urls: string[]
   source_website: string
+  listing_date: string | null
   market_price_rating?: number | null
 }
 

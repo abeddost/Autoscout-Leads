@@ -4,6 +4,7 @@ export interface CarLead {
   id: string
   created_at: string
   date_found: string
+  listing_date: string | null
   seller_name: string | null
   seller_mobile: string | null
   seller_email: string | null

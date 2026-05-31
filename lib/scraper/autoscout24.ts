@@ -20,11 +20,21 @@ const MAX_PAGES = 5
 export const MAX_AI_ANALYSIS_PER_RUN = 50
 const BASE_URL = 'https://www.autoscout24.de'
 
-export function shouldAnalyzeListingCandidate(listing: RawListing): boolean {
+export function hasSellerPhone(listing: RawListing): boolean {
+  const phone = listing.seller_mobile?.trim()
+  if (!phone) return false
+  return /\d{6,}/.test(phone.replace(/\D/g, ''))
+}
+
+export function hasCandidateMarketProfile(listing: RawListing): boolean {
   if (listing.market_price_rating == null || listing.market_price_rating > 2) return false
   if (listing.year != null && listing.year < 2016) return false
   if (listing.mileage != null && listing.mileage > 150000) return false
   return true
+}
+
+export function shouldAnalyzeListingCandidate(listing: RawListing): boolean {
+  return hasCandidateMarketProfile(listing) && hasSellerPhone(listing)
 }
 
 function buildSearchUrl(brand: string, page: number): string {
@@ -49,6 +59,35 @@ function delay(ms: number) {
 
 function randomDelay() {
   return delay(1200 + Math.random() * 1000)
+}
+
+// Extract the listing publication date from AutoScout24 JSON data.
+// AutoScout24 stores it under various field names depending on the page type.
+function extractListingDate(obj: Record<string, unknown>): string | null {
+  const candidates = [
+    obj.firstRegistrationDate,
+    (obj.tracking as Record<string, unknown> | null)?.firstPublishedAt,
+    obj.firstPublicationDate,
+    obj.publishedAt,
+    obj.createdAt,
+    obj.dateTransferred,
+    obj.listingDate,
+  ]
+  for (const raw of candidates) {
+    if (typeof raw === 'string' && raw.length >= 8) {
+      try {
+        const d = new Date(raw)
+        if (!isNaN(d.getTime())) return d.toISOString().split('T')[0]
+      } catch { /* skip */ }
+    }
+    if (typeof raw === 'number' && raw > 0) {
+      try {
+        const d = new Date(raw)
+        if (!isNaN(d.getTime())) return d.toISOString().split('T')[0]
+      } catch { /* skip */ }
+    }
+  }
+  return null
 }
 
 // Extract number from a string like "130 kW (177 PS)"
@@ -149,6 +188,7 @@ function parseSearchListing(listing: Record<string, unknown>): RawListing | null
       equipment: [],
       image_urls: images.filter((img) => img.startsWith('http')).slice(0, 10),
       source_website: 'autoscout24',
+      listing_date: extractListingDate(listing),
       market_price_rating: Number.isFinite(priceEvaluation) ? priceEvaluation : null,
     }
   } catch {
@@ -240,6 +280,7 @@ function parseNextData(data: Record<string, unknown>, listingUrl: string): RawLi
       equipment: equipmentList.slice(0, 30),
       image_urls: images.slice(0, 10),
       source_website: 'autoscout24',
+      listing_date: extractListingDate(listing),
     }
   } catch {
     return null
@@ -314,6 +355,7 @@ async function parseListingFromPage(
       equipment: [],
       image_urls: data.images,
       source_website: 'autoscout24',
+      listing_date: null,
     }
   } catch {
     return null
