@@ -497,3 +497,117 @@ export async function scrapeAutoScout24(): Promise<ScrapeResult> {
 
   return { listings, checked, errors }
 }
+
+// Targeted scrape for a single brand with optional model post-filter
+export async function scrapeAutoScout24Custom(
+  brand: string,
+  model?: string
+): Promise<ScrapeResult> {
+  const listings: RawListing[] = []
+  const errors: string[] = []
+  let checked = 0
+  const seenUrls = new Set<string>()
+  const CUSTOM_MAX_PAGES = 3
+
+  let browser: import('playwright-core').Browser | null = null
+
+  try {
+    let executablePath: string | undefined
+    let launchArgs: string[] = []
+
+    if (process.env.AWS_LAMBDA_FUNCTION_VERSION || process.env.VERCEL) {
+      const chromium = await import('@sparticuz/chromium-min').then((m) => m.default || m)
+      const packArch = process.arch === 'arm64' ? 'arm64' : 'x64'
+      executablePath = await chromium.executablePath(
+        `https://github.com/Sparticuz/chromium/releases/download/v149.0.0/chromium-v149.0.0-pack.${packArch}.tar`
+      )
+      launchArgs = chromium.args as string[]
+    }
+
+    const { chromium: playwrightChromium } = await import('playwright-core')
+    browser = await playwrightChromium.launch({
+      executablePath,
+      args: launchArgs.length
+        ? launchArgs
+        : ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+      headless: true,
+    })
+
+    for (let page = 1; page <= CUSTOM_MAX_PAGES; page++) {
+      const url = buildSearchUrl(brand.toLowerCase(), page)
+
+      try {
+        const ctx = await browser.newContext({
+          userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          locale: 'de-DE',
+          viewport: { width: 1280, height: 900 },
+        })
+        const searchPage = await ctx.newPage()
+        await searchPage.route('**/*.{png,jpg,jpeg,gif,webp,svg,woff,woff2,ttf}', (r) => r.abort())
+        await searchPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 })
+        await randomDelay()
+
+        const nextDataJson = await searchPage.evaluate(() =>
+          document.getElementById('__NEXT_DATA__')?.textContent || null
+        )
+
+        const searchListings = nextDataJson
+          ? parseSearchNextData(JSON.parse(nextDataJson) as Record<string, unknown>)
+          : []
+
+        const listingUrls: string[] = searchListings.length > 0
+          ? []
+          : await searchPage.evaluate(() => {
+              const links = Array.from(document.querySelectorAll('a[href*="/angebote/"]')) as HTMLAnchorElement[]
+              return [...new Set(links.map((a) => a.href))].filter((h) => h.includes('/angebote/'))
+            })
+
+        await ctx.close()
+
+        if (searchListings.length === 0 && listingUrls.length === 0) break
+
+        for (const listing of searchListings) {
+          if (seenUrls.has(listing.listing_url)) continue
+          seenUrls.add(listing.listing_url)
+          checked++
+          listings.push(listing)
+        }
+
+        for (const listingUrl of listingUrls) {
+          const cleanUrl = listingUrl.split('?')[0]
+          if (seenUrls.has(cleanUrl)) continue
+          seenUrls.add(cleanUrl)
+          checked++
+          try {
+            const detailCtx = await browser.newContext({ userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36', locale: 'de-DE' })
+            const detailPage = await detailCtx.newPage()
+            await detailPage.goto(cleanUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
+            await randomDelay()
+            const listing = await parseListingFromPage(detailPage, cleanUrl)
+            if (listing && listing.price >= PRICE_FROM && listing.price <= PRICE_TO) listings.push(listing)
+            await detailCtx.close()
+          } catch (err) {
+            errors.push(`Detail page error ${cleanUrl}: ${String(err)}`)
+          }
+        }
+      } catch (err) {
+        errors.push(`Search page error ${url}: ${String(err)}`)
+      }
+    }
+  } finally {
+    await browser?.close()
+  }
+
+  // Post-filter by model if specified
+  const filteredListings = model
+    ? listings.filter((l) => {
+        const q = model.toLowerCase()
+        return (
+          l.model?.toLowerCase().includes(q) ||
+          l.vehicle_title?.toLowerCase().includes(q)
+        )
+      })
+    : listings
+
+  return { listings: filteredListings, checked, errors }
+}
