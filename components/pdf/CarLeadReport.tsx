@@ -137,6 +137,18 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     marginBottom: 16,
   },
+  photoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  photoGridItem: {
+    width: '48%',
+    height: 120,
+    objectFit: 'cover',
+    borderRadius: 5,
+    marginBottom: 8,
+  },
   // Section
   section: {
     marginBottom: 14,
@@ -250,6 +262,32 @@ function scoreColor(score: number | null | undefined) {
   return colors.danger
 }
 
+function optimizePdfImageUrl(url: string) {
+  if (!url.startsWith('http')) return null
+  if (!url.includes('pictures.autoscout24.net')) return url
+  return url.replace(/\/\d+x\d+\.(?:webp|jpe?g)(?:\?.*)?$/i, '/800x600.jpg')
+}
+
+function getPdfImages(images: unknown) {
+  if (!Array.isArray(images)) return []
+
+  const seen = new Set<string>()
+  const optimized: string[] = []
+
+  for (const image of images) {
+    if (typeof image !== 'string') continue
+
+    const url = optimizePdfImageUrl(image.trim())
+    if (!url || seen.has(url)) continue
+
+    seen.add(url)
+    optimized.push(url)
+    if (optimized.length >= 5) break
+  }
+
+  return optimized
+}
+
 interface Props {
   car: CarLead
 }
@@ -261,9 +299,9 @@ export function CarLeadReport({ car }: Props) {
     year: 'numeric',
   })
 
-  const firstImage = Array.isArray(car.image_urls) && car.image_urls.length > 0
-    ? car.image_urls[0]
-    : null
+  const pdfImages = getPdfImages(car.image_urls)
+  const firstImage = pdfImages[0] || null
+  const galleryImages = pdfImages.slice(1)
 
   return (
     <Document title={`AutoLead AI — ${car.vehicle_title}`} author="AutoLead AI">
@@ -286,6 +324,17 @@ export function CarLeadReport({ car }: Props) {
         {/* Car Image */}
         {firstImage && (
           <Image src={firstImage} style={styles.carImage} />
+        )}
+
+        {galleryImages.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Photos</Text>
+            <View style={styles.photoGrid}>
+              {galleryImages.map((image, index) => (
+                <Image key={index} src={image} style={styles.photoGridItem} />
+              ))}
+            </View>
+          </View>
         )}
 
         {/* Hero */}
