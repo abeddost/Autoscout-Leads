@@ -17,7 +17,6 @@ const PRICE_TO = 70000
 const ZIP_CODE = '55294'
 const RADIUS_KM = 100
 const MAX_PAGES = 5
-export const MAX_AI_ANALYSIS_PER_RUN = 50
 const BASE_URL = 'https://www.autoscout24.de'
 
 export function shouldAnalyzeListingCandidate(listing: RawListing): boolean {

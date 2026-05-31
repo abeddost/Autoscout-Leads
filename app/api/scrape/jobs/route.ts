@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { createScrapeJob, runScrapeJobStep } from '@/lib/scraper/jobs'
+import { createScrapeJob } from '@/lib/scraper/jobs'
 
 export async function POST() {
   const supabaseAuth = await createClient()
@@ -11,8 +11,7 @@ export async function POST() {
   }
 
   try {
-    const created = await createScrapeJob(user.id)
-    const job = await runScrapeJobStep(created.id)
+    const job = await createScrapeJob(user.id)
     return NextResponse.json({ jobId: job.id, job })
   } catch (err) {
     return NextResponse.json({ error: err instanceof Error ? err.message : String(err) }, { status: 500 })
