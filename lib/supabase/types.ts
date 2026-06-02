@@ -1,3 +1,5 @@
+import type { ValuationConfidence } from '@/lib/valuation/confidence'
+
 export type CarLeadStatus = 'new' | 'reviewed' | 'contacted' | 'closed'
 
 export interface CarLead {
@@ -23,6 +25,12 @@ export interface CarLead {
   potential_profit: number | null
   deal_score: number | null
   risk_score: number | null
+  valuation_confidence: ValuationConfidence | null
+  comparable_count: number | null
+  comparable_median_price: number | null
+  comparable_price_min: number | null
+  comparable_price_max: number | null
+  valuation_method: string | null
   seller_type: string
   accident_info: string | null
   number_of_owners: number | null

@@ -8,6 +8,10 @@ import StatusDropdown from '@/components/leads/StatusDropdown'
 import PDFButton from '@/components/leads/PDFButton'
 import { formatCurrency, formatMileage, formatDate, getDealScoreBg } from '@/lib/utils'
 import type { CarLeadStatus } from '@/lib/supabase/types'
+import {
+  getValuationConfidenceBadgeClass,
+  getValuationConfidenceDescription,
+} from '@/lib/valuation/confidence'
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -97,6 +101,9 @@ export default async function LeadDetailPage({
               <div className="bg-blue-50 rounded-lg p-3 text-center">
                 <p className="text-xs text-gray-500 mb-1">Market Value</p>
                 <p className="text-lg font-bold text-gray-900">{formatCurrency(car.estimated_market_value)}</p>
+                <span className={`mt-1 inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${getValuationConfidenceBadgeClass(car.valuation_confidence)}`}>
+                  {getValuationConfidenceDescription(car.valuation_confidence, car.comparable_count)}
+                </span>
               </div>
               <div className="bg-emerald-50 rounded-lg p-3 text-center">
                 <p className="text-xs text-gray-500 mb-1">Potential Profit</p>
@@ -107,6 +114,23 @@ export default async function LeadDetailPage({
               <div className={`rounded-lg p-3 text-center ${getDealScoreBg(car.deal_score)}`}>
                 <p className="text-xs mb-1 opacity-70">Deal Score</p>
                 <p className="text-2xl font-bold">{car.deal_score ?? '—'}</p>
+              </div>
+            </div>
+            <div className="mt-4 rounded-lg border border-gray-100 bg-gray-50 p-3 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium text-gray-700">Valuation evidence</span>
+                <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${getValuationConfidenceBadgeClass(car.valuation_confidence)}`}>
+                  {getValuationConfidenceDescription(car.valuation_confidence, car.comparable_count)}
+                </span>
+              </div>
+              <div className="mt-2 grid grid-cols-1 gap-2 text-xs text-gray-600 sm:grid-cols-3">
+                <div>Median: <span className="font-medium text-gray-900">{formatCurrency(car.comparable_median_price)}</span></div>
+                <div>Range: <span className="font-medium text-gray-900">
+                  {car.comparable_price_min != null && car.comparable_price_max != null
+                    ? `${formatCurrency(car.comparable_price_min)} - ${formatCurrency(car.comparable_price_max)}`
+                    : '—'}
+                </span></div>
+                <div>Method: <span className="font-medium text-gray-900">{car.valuation_method || 'Legacy valuation'}</span></div>
               </div>
             </div>
           </div>

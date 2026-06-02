@@ -1,6 +1,10 @@
 import Link from 'next/link'
 import type { CarLead } from '@/lib/supabase/types'
 import { formatCurrency, formatMileage, formatDate, getDealScoreBg } from '@/lib/utils'
+import {
+  getValuationConfidenceBadgeClass,
+  getValuationConfidenceDescription,
+} from '@/lib/valuation/confidence'
 
 interface Props {
   leads: CarLead[]
@@ -148,7 +152,12 @@ export default function LeadsTable({ leads, page, totalCount, pageSize, sortBy, 
                     {formatCurrency(lead.price)}
                   </td>
                   <td className="px-4 py-3 text-right text-gray-700 whitespace-nowrap">
-                    {formatCurrency(lead.estimated_market_value)}
+                    <div className="font-medium">{formatCurrency(lead.estimated_market_value)}</div>
+                    <div className="mt-1">
+                      <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${getValuationConfidenceBadgeClass(lead.valuation_confidence)}`}>
+                        {getValuationConfidenceDescription(lead.valuation_confidence, lead.comparable_count)}
+                      </span>
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-right text-gray-600 whitespace-nowrap">
                     {formatMileage(lead.mileage)}

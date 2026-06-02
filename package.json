@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "test": "npm run test:valuation",
+    "test:valuation": "node scripts/valuation-fixtures.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.7.0",

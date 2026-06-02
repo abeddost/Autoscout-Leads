@@ -9,6 +9,7 @@ import {
   Link,
 } from '@react-pdf/renderer'
 import type { CarLead } from '@/lib/supabase/types'
+import { getValuationConfidenceLabel } from '@/lib/valuation/confidence'
 
 const colors = {
   brand: '#1d4ed8',
@@ -226,6 +227,17 @@ const styles = StyleSheet.create({
     fontFamily: 'Helvetica-Bold',
     color: colors.brand,
   },
+  valuationBox: {
+    backgroundColor: colors.bgLight,
+    borderRadius: 6,
+    padding: 10,
+    marginBottom: 14,
+  },
+  valuationText: {
+    fontSize: 8,
+    color: colors.text,
+    lineHeight: 1.4,
+  },
   // Footer
   footer: {
     position: 'absolute',
@@ -260,6 +272,13 @@ function scoreColor(score: number | null | undefined) {
   if (score >= 85) return colors.success
   if (score >= 70) return colors.warning
   return colors.danger
+}
+
+function confidenceColor(confidence: CarLead['valuation_confidence']) {
+  if (confidence === 'strong') return colors.success
+  if (confidence === 'moderate') return colors.brand
+  if (confidence === 'weak') return colors.warning
+  return colors.muted
 }
 
 function optimizePdfImageUrl(url: string) {
@@ -302,6 +321,10 @@ export function CarLeadReport({ car }: Props) {
   const pdfImages = getPdfImages(car.image_urls)
   const firstImage = pdfImages[0] || null
   const galleryImages = pdfImages.slice(1)
+  const valuationConfidence = getValuationConfidenceLabel(car.valuation_confidence)
+  const comparableRange = car.comparable_price_min != null && car.comparable_price_max != null
+    ? `${formatEur(car.comparable_price_min)} - ${formatEur(car.comparable_price_max)}`
+    : '—'
 
   return (
     <Document title={`AutoLead AI — ${car.vehicle_title}`} author="AutoLead AI">
@@ -351,7 +374,7 @@ export function CarLeadReport({ car }: Props) {
               </View>
               <View style={styles.metric}>
                 <Text style={styles.metricValue}>{formatEur(car.estimated_market_value)}</Text>
-                <Text style={styles.metricLabel}>Market Value</Text>
+                <Text style={styles.metricLabel}>Market Value · {valuationConfidence}</Text>
               </View>
               <View style={[styles.metric, { color: colors.success }]}>
                 <Text style={[styles.metricValue, { color: colors.success }]}>
@@ -367,6 +390,19 @@ export function CarLeadReport({ car }: Props) {
             <Text style={styles.scoreValue}>{car.deal_score ?? '—'}</Text>
             <Text style={styles.scoreLabel}>Deal Score</Text>
           </View>
+        </View>
+
+        <View style={styles.valuationBox}>
+          <Text style={[styles.valuationText, { color: confidenceColor(car.valuation_confidence), fontFamily: 'Helvetica-Bold' }]}>
+            Valuation confidence: {valuationConfidence}
+            {car.comparable_count != null ? ` · ${car.comparable_count} comparable${car.comparable_count === 1 ? '' : 's'}` : ''}
+          </Text>
+          <Text style={styles.valuationText}>
+            Comparable median: {formatEur(car.comparable_median_price)} · Range: {comparableRange}
+          </Text>
+          <Text style={styles.valuationText}>
+            Method: {car.valuation_method || 'Legacy valuation'}
+          </Text>
         </View>
 
         {/* Vehicle Details */}

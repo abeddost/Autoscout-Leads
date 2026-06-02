@@ -1,6 +1,10 @@
 import type { CarLead } from '@/lib/supabase/types'
-import { formatCurrency, getDealScoreBg } from '@/lib/utils'
+import { formatCurrency } from '@/lib/utils'
 import { cn } from '@/lib/utils'
+import {
+  getValuationConfidenceBadgeClass,
+  getValuationConfidenceDescription,
+} from '@/lib/valuation/confidence'
 
 function ScoreGauge({ score, label }: { score: number; label: string }) {
   const pct = Math.round((score / 100) * 100)
@@ -61,7 +65,27 @@ export default function AIAnalysisPanel({ car }: { car: CarLead }) {
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-gray-500">Est. market value</span>
-              <span className="font-medium text-gray-900">{formatCurrency(car.estimated_market_value)}</span>
+              <span className="font-medium text-gray-900 text-right">
+                {formatCurrency(car.estimated_market_value)}
+                <span className={cn(
+                  'ml-2 inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium',
+                  getValuationConfidenceBadgeClass(car.valuation_confidence)
+                )}>
+                  {getValuationConfidenceDescription(car.valuation_confidence, car.comparable_count)}
+                </span>
+              </span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-500">Comparable median</span>
+              <span className="font-medium text-gray-700">{formatCurrency(car.comparable_median_price)}</span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-gray-500">Comparable range</span>
+              <span className="font-medium text-gray-700">
+                {car.comparable_price_min != null && car.comparable_price_max != null
+                  ? `${formatCurrency(car.comparable_price_min)} - ${formatCurrency(car.comparable_price_max)}`
+                  : '—'}
+              </span>
             </div>
             <div className="border-t border-dashed border-gray-200 my-1" />
             <div className="flex justify-between text-sm">

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { analyzeCarWithGemini } from '@/lib/gemini/analyze'
 import { createServiceClient } from '@/lib/supabase/server'
 import type { CarLead } from '@/lib/supabase/types'
+import type { MarketValuation } from '@/lib/valuation/market'
 
 export async function POST(
   _request: Request,
@@ -21,7 +22,28 @@ export async function POST(
     return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
   }
 
-  const analysis = await analyzeCarWithGemini(car)
+  const existingValuation: MarketValuation | undefined =
+    car.estimated_market_value != null && car.potential_profit != null && car.deal_score != null
+      ? {
+          estimated_market_value: car.estimated_market_value,
+          potential_profit: car.potential_profit,
+          deal_score: car.deal_score,
+          risk_score: car.risk_score ?? 50,
+          ai_summary: car.ai_summary ?? '',
+          ai_recommendation: car.ai_recommendation ?? '',
+          valuation_confidence: car.valuation_confidence ?? 'legacy',
+          comparable_count: car.comparable_count ?? 0,
+          comparable_median_price: car.comparable_median_price ?? null,
+          comparable_price_min: car.comparable_price_min ?? null,
+          comparable_price_max: car.comparable_price_max ?? null,
+          discount_percentage: car.estimated_market_value > 0
+            ? Math.round((car.potential_profit / car.estimated_market_value) * 1000) / 10
+            : 0,
+          valuation_method: car.valuation_method ?? 'existing saved lead valuation',
+        }
+      : undefined
+
+  const analysis = await analyzeCarWithGemini(car, existingValuation)
   if (!analysis) {
     return NextResponse.json({ error: 'Analysis failed' }, { status: 500 })
   }

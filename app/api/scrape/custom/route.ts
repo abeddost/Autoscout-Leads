@@ -39,6 +39,11 @@ export async function POST(request: Request) {
     not_profitable: 0,
     weak_evidence: 0,
   }
+  const valuationConfidenceCounts = {
+    strong: 0,
+    moderate: 0,
+    weak: 0,
+  }
 
   try {
     const { listings, checked, errors: scrapeErrors } = await scrapeAutoScout24Custom(brand, model)
@@ -61,6 +66,9 @@ export async function POST(request: Request) {
         if (existing) { skipCounts.duplicate++; continue }
 
         const valuation = estimateMarketValuation(listing, listings)
+        if (valuation.valuation_confidence !== 'legacy') {
+          valuationConfidenceCounts[valuation.valuation_confidence]++
+        }
 
         if (valuation.potential_profit < 2000) { skipCounts.not_profitable++; continue }
         if (!meetsValuationThreshold(valuation, listing.price)) { skipCounts.below_threshold++; continue }
@@ -72,7 +80,7 @@ export async function POST(request: Request) {
           accidentLower.includes('damaged')
         ) { skipCounts.accident++; continue }
 
-        if (valuation.evidence_strength === 'weak') skipCounts.weak_evidence++
+        if (valuation.valuation_confidence === 'weak') skipCounts.weak_evidence++
 
         const analysis = await analyzeCarWithGemini(listing, valuation)
         if (!analysis) { skipCounts.no_analysis++; continue }
@@ -98,6 +106,12 @@ export async function POST(request: Request) {
           potential_profit: analysis.potential_profit,
           deal_score: analysis.deal_score,
           risk_score: analysis.risk_score,
+          valuation_confidence: valuation.valuation_confidence,
+          comparable_count: valuation.comparable_count,
+          comparable_median_price: valuation.comparable_median_price,
+          comparable_price_min: valuation.comparable_price_min,
+          comparable_price_max: valuation.comparable_price_max,
+          valuation_method: valuation.valuation_method,
           seller_type: listing.seller_type,
           accident_info: listing.accident_info,
           number_of_owners: listing.number_of_owners,
@@ -138,10 +152,10 @@ export async function POST(request: Request) {
     } as any)
 
     if (fatalError) {
-      return NextResponse.json({ error: fatalError, checked, candidates: totalCandidates, saved: totalSaved, skipCounts, errors: errors.slice(0, 10) }, { status: fatalStatus })
+      return NextResponse.json({ error: fatalError, checked, candidates: totalCandidates, saved: totalSaved, skipCounts, valuationConfidenceCounts, errors: errors.slice(0, 10) }, { status: fatalStatus })
     }
 
-    return NextResponse.json({ success: true, checked, candidates: totalCandidates, saved: totalSaved, skipCounts, errors: errors.slice(0, 10) })
+    return NextResponse.json({ success: true, checked, candidates: totalCandidates, saved: totalSaved, skipCounts, valuationConfidenceCounts, errors: errors.slice(0, 10) })
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 })
   }

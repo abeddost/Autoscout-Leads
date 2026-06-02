@@ -21,6 +21,11 @@ type ScrapeResult = {
   candidates?: number
   error?: string
   skipCounts?: SkipCounts
+  valuationConfidenceCounts?: {
+    strong?: number
+    moderate?: number
+    weak?: number
+  }
 }
 
 export default function ScrapeButton() {
@@ -72,6 +77,14 @@ export default function ScrapeButton() {
       ].filter(Boolean).join(', ')
     : ''
 
+  const confidenceDetails = result?.valuationConfidenceCounts
+    ? [
+        result.valuationConfidenceCounts.strong ? `${result.valuationConfidenceCounts.strong} strong` : null,
+        result.valuationConfidenceCounts.moderate ? `${result.valuationConfidenceCounts.moderate} moderate` : null,
+        result.valuationConfidenceCounts.weak ? `${result.valuationConfidenceCounts.weak} weak` : null,
+      ].filter(Boolean).join(', ')
+    : ''
+
   return (
     <>
       {showModal && (
@@ -88,6 +101,7 @@ export default function ScrapeButton() {
           <span className="text-sm text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-1.5">
             Saved {result.saved} of {result.candidates ?? result.checked} candidates
             {typeof result.checked === 'number' ? ` (${result.checked} checked)` : ''}
+            {confidenceDetails ? `; confidence: ${confidenceDetails}` : ''}
             {skipDetails ? `; ${skipDetails}` : ''}
           </span>
         )}

@@ -5,7 +5,8 @@ import {
   hasSellerPhone,
   scrapeAutoScout24,
 } from '@/lib/scraper/autoscout24'
-import { analyzeCarWithGemini, isGeminiAnalysisError, meetsLeadThreshold } from '@/lib/gemini/analyze'
+import { analyzeCarWithGemini, isGeminiAnalysisError } from '@/lib/gemini/analyze'
+import { estimateMarketValuation, meetsValuationThreshold } from '@/lib/valuation/market'
 import { createServiceClient } from '@/lib/supabase/server'
 
 function verifySecret(request: Request): boolean {
@@ -32,6 +33,13 @@ export async function POST(request: Request) {
     accident: 0,
     insert_error: 0,
     no_phone: 0,
+    not_profitable: 0,
+    weak_evidence: 0,
+  }
+  const valuationConfidenceCounts = {
+    strong: 0,
+    moderate: 0,
+    weak: 0,
   }
 
   try {
@@ -50,7 +58,7 @@ export async function POST(request: Request) {
       .slice(0, MAX_AI_ANALYSIS_PER_RUN)
     totalCandidates = candidates.length
 
-    console.log(`[scrape] Analyzing ${totalCandidates} pre-filtered candidates with Gemini`)
+    console.log(`[scrape] Valuing ${totalCandidates} pre-filtered candidates before Gemini`)
 
     for (const listing of candidates) {
       try {
@@ -66,15 +74,17 @@ export async function POST(request: Request) {
           continue
         }
 
-        // Run Gemini analysis
-        const analysis = await analyzeCarWithGemini(listing)
-        if (!analysis) {
-          skipCounts.no_analysis++
+        const valuation = estimateMarketValuation(listing, listings)
+        if (valuation.valuation_confidence !== 'legacy') {
+          valuationConfidenceCounts[valuation.valuation_confidence]++
+        }
+
+        if (valuation.potential_profit < 2000) {
+          skipCounts.not_profitable++
           continue
         }
 
-        // Apply lead filter thresholds
-        if (!meetsLeadThreshold(analysis, listing.price)) {
+        if (!meetsValuationThreshold(valuation, listing.price)) {
           skipCounts.below_threshold++
           continue
         }
@@ -87,6 +97,17 @@ export async function POST(request: Request) {
           accidentLower.includes('damaged')
         ) {
           skipCounts.accident++
+          continue
+        }
+
+        if (valuation.valuation_confidence === 'weak') {
+          skipCounts.weak_evidence++
+        }
+
+        // Run Gemini only for listings that pass deterministic valuation thresholds.
+        const analysis = await analyzeCarWithGemini(listing, valuation)
+        if (!analysis) {
+          skipCounts.no_analysis++
           continue
         }
 
@@ -112,6 +133,12 @@ export async function POST(request: Request) {
           potential_profit: analysis.potential_profit,
           deal_score: analysis.deal_score,
           risk_score: analysis.risk_score,
+          valuation_confidence: valuation.valuation_confidence,
+          comparable_count: valuation.comparable_count,
+          comparable_median_price: valuation.comparable_median_price,
+          comparable_price_min: valuation.comparable_price_min,
+          comparable_price_max: valuation.comparable_price_max,
+          valuation_method: valuation.valuation_method,
           seller_type: listing.seller_type,
           accident_info: listing.accident_info,
           number_of_owners: listing.number_of_owners,
@@ -163,6 +190,7 @@ export async function POST(request: Request) {
         candidates: totalCandidates,
         saved: totalSaved,
         skipCounts,
+        valuationConfidenceCounts,
         errors: errors.slice(0, 10),
       }, { status: fatalStatus })
     }
@@ -173,6 +201,7 @@ export async function POST(request: Request) {
       candidates: totalCandidates,
       saved: totalSaved,
       skipCounts,
+      valuationConfidenceCounts,
       errors: errors.slice(0, 10),
     })
   } catch (err) {

@@ -17,6 +17,7 @@ interface ScrapeResult {
   candidates: number
   saved: number
   skipCounts: Record<string, number>
+  valuationConfidenceCounts?: Record<'strong' | 'moderate' | 'weak', number>
   errors?: string[]
 }
 
@@ -190,6 +191,21 @@ export default function CustomSearchPage() {
                         .map(([key, val]) => (
                           <span key={key} className="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full border border-gray-200">
                             {key.replace(/_/g, ' ')}: {val}
+                          </span>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
+                {result.valuationConfidenceCounts && Object.values(result.valuationConfidenceCounts).some((v) => v > 0) && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Valuation confidence</p>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(result.valuationConfidenceCounts)
+                        .filter(([, v]) => v > 0)
+                        .map(([key, val]) => (
+                          <span key={key} className="bg-gray-100 text-gray-600 text-xs px-2.5 py-1 rounded-full border border-gray-200">
+                            {key}: {val}
                           </span>
                         ))}
                     </div>

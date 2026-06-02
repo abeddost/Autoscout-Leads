@@ -1,5 +1,6 @@
 import { GoogleGenAI } from '@google/genai'
 import type { CarLead } from '@/lib/supabase/types'
+import type { MarketValuation } from '@/lib/valuation/market'
 
 export interface GeminiAnalysis {
   estimated_market_value: number
@@ -31,7 +32,7 @@ export function getGeminiModel() {
   return process.env.GEMINI_MODEL || 'gemini-2.5-flash'
 }
 
-const ANALYSIS_PROMPT = (car: Partial<CarLead>) => `
+const ANALYSIS_PROMPT = (car: Partial<CarLead>, valuation?: MarketValuation) => `
 You are an expert German used car market analyst. Analyze the following private car listing from AutoScout24.de and provide a structured JSON response.
 
 Car Details:
@@ -49,41 +50,52 @@ Car Details:
 - Number of Previous Owners: ${car.number_of_owners ?? 'Unknown'}
 - Equipment/Options: ${Array.isArray(car.equipment) && car.equipment.length > 0 ? car.equipment.slice(0, 20).join(', ') : 'Not listed'}
 
-Market context: German used car market, 2025. Consider regional pricing near Mainz/Rhein-Main area (PLZ 55294, Bodenheim).
+Market evidence computed by the app from the current AutoScout scrape:
+- Estimated market value: €${valuation?.estimated_market_value?.toLocaleString('de-DE') ?? car.estimated_market_value?.toLocaleString('de-DE') ?? 'Unknown'}
+- Listed price: €${car.price?.toLocaleString('de-DE')}
+- Potential profit: €${valuation?.potential_profit?.toLocaleString('de-DE') ?? car.potential_profit?.toLocaleString('de-DE') ?? 'Unknown'}
+- Deal score: ${valuation?.deal_score ?? car.deal_score ?? 'Unknown'}/100
+- Valuation confidence: ${valuation?.valuation_confidence ?? car.valuation_confidence ?? 'Unknown'}
+- Comparable count: ${valuation?.comparable_count ?? 'Unknown'}
+- Comparable median price: ${valuation?.comparable_median_price ? `€${valuation.comparable_median_price.toLocaleString('de-DE')}` : 'Unknown'}
+- Comparable price range: ${valuation?.comparable_price_min != null && valuation.comparable_price_max != null ? `€${valuation.comparable_price_min.toLocaleString('de-DE')} to €${valuation.comparable_price_max.toLocaleString('de-DE')}` : 'Unknown'}
+- Discount versus evidence value: ${valuation?.discount_percentage ?? 'Unknown'}%
+- Valuation method: ${valuation?.valuation_method ?? 'Unknown'}
 
-Step 1 — Estimate the true market value for this exact car (brand, model, year, mileage, fuel, transmission, equipment) based on current German private market prices. Be precise.
+Important: Do not invent a different market value, profit, or deal score. Use the computed market evidence above. Your job is to identify qualitative risks, summarize why the computed evidence is or is not attractive, and recommend a next action.
+${valuation?.valuation_confidence === 'weak' ? 'Weak confidence rule: the recommendation must start with Consider or Pass, and it must explicitly mention weak comparable evidence.' : ''}
 
-Step 2 — Score the deal using the FULL 0–100 range below. Most cars listed at fair market price score 60–70. Only genuinely undervalued listings exceed 85.
-
-DEAL SCORE RUBRIC (mandatory — do not compress scores into a narrow band):
-- 95–100: Exceptional steal — 30%+ below market, low mileage, clean history, high-demand spec
-- 85–94:  Strong deal — 15–29% below market, good condition, solid demand
-- 75–84:  Good value — 8–14% below market, minor concerns acceptable
-- 60–74:  Fair — listed at or within 7% of market value
-- 40–59:  Weak — slightly above market or notable concerns (high mileage, age, owners)
-- 20–39:  Poor — overpriced relative to condition and market
-- 0–19:   Avoid — significantly overpriced or major red flags
-
-SCORING FACTORS (apply all):
-1. Price vs. market value (30% weight) — most important
-2. Mileage vs. age-appropriate average (20% weight)
-3. Vehicle age (15% weight)
-4. Brand/model demand and resale value in Germany (15% weight)
-5. Equipment package completeness (10% weight)
-6. Accident history, owner count, seller type (10% weight)
-
-RISK SCORE (0 = no risk, 100 = very risky): consider mileage, accident history, owners, age, uncommon spec.
+RISK SCORE (0 = no risk, 100 = very risky): consider mileage, accident history, owners, age, uncommon spec, weak comparable evidence, and missing details.
 
 Respond ONLY with this exact JSON (no markdown, no explanation outside the JSON):
 {
-  "estimated_market_value": <integer euros — realistic current private market value>,
-  "potential_profit": <estimated_market_value minus listed price, can be negative>,
-  "deal_score": <integer 0–100 — use the full rubric above, not a narrow band>,
+  "estimated_market_value": ${valuation?.estimated_market_value ?? '<integer euros from computed evidence>'},
+  "potential_profit": ${valuation?.potential_profit ?? '<integer euros from computed evidence>'},
+  "deal_score": ${valuation?.deal_score ?? '<integer 0-100 from computed evidence>'},
   "risk_score": <integer 0–100>,
-  "ai_summary": "<2–3 sentences: state the estimated market value, explain why this is or isn't a deal, mention the key positive and negative factors>",
+  "ai_summary": "<2–3 sentences: mention the computed valuation evidence, explain why this is or isn't a deal, mention the key positive and negative factors>",
   "ai_recommendation": "<Start with exactly one of: 'Strong Buy', 'Buy', 'Consider', 'Pass'. Then one sentence with the single most important reason.>"
 }
 `
+
+function normalizeRecommendation(recommendation: string | undefined, valuation?: MarketValuation): string {
+  const cleaned = (recommendation || '').trim()
+  if (valuation?.valuation_confidence !== 'weak') return cleaned.slice(0, 300)
+
+  if (!cleaned || /^(strong buy|buy)\b/i.test(cleaned)) {
+    return 'Consider - weak comparable evidence; verify the market value before contacting the seller.'
+  }
+
+  if (!/^(consider|pass)\b/i.test(cleaned)) {
+    return 'Consider - weak comparable evidence; verify the market value before contacting the seller.'
+  }
+
+  if (!/(weak|comparable|evidence|confidence)/i.test(cleaned)) {
+    return `${cleaned.replace(/[. ]+$/, '')}. Weak comparable evidence needs manual verification.`.slice(0, 300)
+  }
+
+  return cleaned.slice(0, 300)
+}
 
 let geminiClient: GoogleGenAI | null = null
 
@@ -163,7 +175,10 @@ function getFinishReason(response: unknown): string | null {
   return typeof finishReason === 'string' ? finishReason : null
 }
 
-export async function analyzeCarWithGemini(car: Partial<CarLead>): Promise<GeminiAnalysis | null> {
+export async function analyzeCarWithGemini(
+  car: Partial<CarLead>,
+  valuation?: MarketValuation
+): Promise<GeminiAnalysis | null> {
   const model = getGeminiModel()
 
   try {
@@ -171,7 +186,7 @@ export async function analyzeCarWithGemini(car: Partial<CarLead>): Promise<Gemin
 
     const response = await client.models.generateContent({
       model,
-      contents: ANALYSIS_PROMPT(car),
+      contents: ANALYSIS_PROMPT(car, valuation),
       config: {
         responseMimeType: 'application/json',
         temperature: 0.2,
@@ -203,14 +218,22 @@ export async function analyzeCarWithGemini(car: Partial<CarLead>): Promise<Gemin
       )
     }
 
-    // Validate and clamp scores
+    const parsedRisk = Number.isFinite(Number(parsed.risk_score))
+      ? Number(parsed.risk_score)
+      : valuation?.risk_score ?? 50
+
+    // Validate and clamp scores. When deterministic valuation evidence is provided,
+    // Gemini is only allowed to add narrative and raise risk, not change the valuation.
     return {
-      estimated_market_value: Math.max(0, Math.round(parsed.estimated_market_value)),
-      potential_profit: Math.round(parsed.potential_profit),
-      deal_score: Math.min(100, Math.max(0, Math.round(parsed.deal_score))),
-      risk_score: Math.min(100, Math.max(0, Math.round(parsed.risk_score))),
+      estimated_market_value: valuation?.estimated_market_value ?? Math.max(0, Math.round(parsed.estimated_market_value)),
+      potential_profit: valuation?.potential_profit ?? Math.round(parsed.potential_profit),
+      deal_score: valuation?.deal_score ?? Math.min(100, Math.max(0, Math.round(parsed.deal_score))),
+      risk_score: Math.min(
+        100,
+        Math.max(0, Math.round(Math.max(valuation?.risk_score ?? 0, parsedRisk)))
+      ),
       ai_summary: parsed.ai_summary?.slice(0, 1000) || '',
-      ai_recommendation: parsed.ai_recommendation?.slice(0, 300) || '',
+      ai_recommendation: normalizeRecommendation(parsed.ai_recommendation, valuation),
     }
   } catch (err) {
     if (err instanceof GeminiAnalysisError) throw err
